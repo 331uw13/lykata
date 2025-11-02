@@ -1,0 +1,2 @@
+# lykata
+Project notes manager
