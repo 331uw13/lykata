@@ -1,7 +1,7 @@
 FLAGS = -O2 -Wall -Wextra
 CC = gcc
 
-TARGET_NAME = lyk
+TARGET_NAME = lykata
 
 SRC  = $(shell find ./src -type f -name *.c)
 OBJS = $(SRC:.c=.o)

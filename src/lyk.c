@@ -5,13 +5,94 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <errno.h>
+
+#include <pwd.h>
+#include <ncurses.h>
+#include <json-c/json.h>
+
 
 #include "lyk.h"
 #include "fileio.h"
+#include "tui.h"
 
 
-#include <json-c/json.h>
+#define LIST_FILE_DIR ".lyk/"
+#define LIST_FILENAME "project-notes.json"
 
+
+
+
+struct lyk_t* lyk_init() {
+
+    // For user home directory.
+    // TODO: Check env variable first.
+    struct passwd* pw = getpwuid(getuid());
+    if(!pw) {
+        fprintf(stderr, "Failed to get home dir.\n");
+        return NULL;
+    }
+
+    struct lyk_t* lyk = malloc(sizeof *lyk);
+    lyk->list_path = create_string();
+    lyk->running = true;
+    lyk->view = VIEW_PROJECTS;
+    lyk->curr_project = NULL;
+
+    lyk->ncui = ncui_init
+    (
+        16,  // Max elements rows.
+        16   // Max elements columns.
+    );
+
+    //printf("%li\n", sizeof(lyk));
+
+    // Create path to note list json.
+    string_move(&lyk->list_path, pw->pw_dir, strlen(pw->pw_dir));
+    if(string_lastbyte(&lyk->list_path) != '/') {
+        string_pushbyte(&lyk->list_path, '/');
+    }
+
+    string_append(&lyk->list_path, LIST_FILE_DIR, strlen(LIST_FILE_DIR));
+    if(!dir_exists(lyk->list_path.bytes)) {
+        printf("\"%s\" Doesnt exist, create it? (yes/no): ", lyk->list_path.bytes);
+        fflush(stdout);
+
+        char input[6] = { 0 };
+        read(STDIN_FILENO, input, sizeof(input));
+
+        if((input[0] != 'y') && (input[0] != 'Y')) {
+            lyk_quit(lyk);
+            return NULL;
+        }
+        if(!mkdir_p(lyk->list_path.bytes, S_IRWXU)) {
+            fprintf(stderr, "Failed to create directory (or its parent dirs) \"%s\" | %s\n",
+                    lyk->list_path.bytes, strerror(errno));
+            lyk_quit(lyk);
+            return NULL;
+        }
+    }
+
+    string_append(&lyk->list_path, LIST_FILENAME, strlen(LIST_FILENAME));    
+    if(!file_exists(lyk->list_path.bytes)) {
+        if(creat(lyk->list_path.bytes, S_IRUSR | S_IWUSR) < 0) {
+            fprintf(stderr, "Failed to create file \"%s\" | %s\n", 
+                    lyk->list_path.bytes, strerror(errno));
+            lyk_quit(lyk);
+            return NULL;
+        }
+    }
+
+    return lyk;
+}
+
+
+void lyk_quit(struct lyk_t* lyk) {
+    string_free(&lyk->list_path); 
+    free_projects(lyk);
+    free_ncui(&lyk->ncui);
+    free(lyk);
+}
 
 void free_project(struct project_t* prj) {
     for(size_t i = 0; i < prj->num_notes; i++) {
@@ -82,7 +163,7 @@ void read_project_notes(struct lyk_t* lyk) {
 
 
 
-void push_new_project(struct lyk_t* lyk, const char* project_name) {
+void create_new_project(struct lyk_t* lyk, const char* project_name) {
     char* file = NULL;
     size_t file_size = 0;
 
@@ -118,7 +199,7 @@ void push_new_project(struct lyk_t* lyk, const char* project_name) {
     read_project_notes(lyk);
 }
 
-void push_new_project_note
+void create_new_project_note
 (
     struct lyk_t* lyk,
     const char* project_name,
@@ -206,5 +287,32 @@ void delete_project(struct lyk_t* lyk, const char* project_name) {
     read_project_notes(lyk);
 }
 
+/*
+void delete_selected_project(struct lyk_t* lyk) {
+    // There are 2 elements before project name list:
+    // INPUT__PROJECT_NAME and BUTTON__ADD_PROJECT.
+    if(lyk->view_cursor < 2) {
+        return;
+    }
 
+    int64_t proj_index = lyk->view_cursor - 2;
+    if(proj_index >= (int64_t)lyk->num_projects) {
+        return;
+    }
+
+    struct project_t* project = &lyk->projects[proj_index];
+
+    if(confirm_user_action(lyk, COLOR_RED, 
+                "Delete \"%s\" notes?\n"
+                "This action cannot be undone!",
+                project->name) == USER_ACTION_DECLINED) {
+        return;
+    }
+
+    delete_project(lyk, project->name);
+    if((int64_t)lyk->view_cursor-2 >= (int64_t)lyk->num_projects) {
+        lyk->view_cursor = lyk->num_projects + 2 - 1;
+    }
+}
+*/
 

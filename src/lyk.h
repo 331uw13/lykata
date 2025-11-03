@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 #include "string.h"
-
+#include "ncui/ncui.h"
 
 
 #define MAX_PROJECTS 64
@@ -34,17 +34,15 @@ struct project_t {
 };
 
 struct lyk_t {
-    struct string_t list_path;
+    struct ncui_t ncui;
+
     bool running;
+    struct string_t list_path;
+    
     enum view_e   view;
-    int           view_cursor;
-    int           view_cursor_max;
 
     int           term_width;
     int           term_height;
-
-    char* selected_input_buffer;
-    size_t selected_input_buffer_memsize;
 
     struct project_t* curr_project;
     struct project_t projects[MAX_PROJECTS];
@@ -52,15 +50,17 @@ struct lyk_t {
 };
 
 
+struct lyk_t* lyk_init();
+void          lyk_quit(struct lyk_t* lyk);
+
 void free_project(struct project_t* prj);
 void free_projects(struct lyk_t* lyk);
 void read_project_notes(struct lyk_t* lyk); 
 
-
-void push_new_project(struct lyk_t* lyk, const char* project_name);
+void create_new_project(struct lyk_t* lyk, const char* project_name);
 void delete_project(struct lyk_t* lyk, const char* project_name);
 
-void push_new_project_note
+void create_new_project_note
 (
     struct lyk_t* lyk,
     const char* project_name,
