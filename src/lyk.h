@@ -21,9 +21,10 @@ enum view_e {
 
 
 struct note_t {
-    int severity;
+    int             severity;
     struct string_t title;
-    struct string_t desc;
+    struct string_t desc; // Description.
+    bool            desc_open;
 };
 
 struct project_t {

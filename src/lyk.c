@@ -41,8 +41,8 @@ struct lyk_t* lyk_init() {
 
     lyk->ncui = ncui_init
     (
-        16,  // Max elements rows.
-        16   // Max elements columns.
+        32,  // Max elements rows.
+        8   // Max elements columns.
     );
 
     //printf("%li\n", sizeof(lyk));
@@ -109,6 +109,14 @@ void free_projects(struct lyk_t* lyk) {
     lyk->num_projects = 0;
 } 
 
+
+static int cmp_note_severity(const void* p1, const void* p2) {
+    struct note_t* n1 = (struct note_t*)p1;
+    struct note_t* n2 = (struct note_t*)p2;
+
+    return (n1->severity < n2->severity);
+}
+
 void read_project_notes(struct lyk_t* lyk) {
     char* file = NULL;
     size_t file_size = 0;
@@ -148,17 +156,27 @@ void read_project_notes(struct lyk_t* lyk) {
             note->severity = severity;
             string_move(&note->title, (char*)title, strlen(title));
             string_move(&note->desc, (char*)desc, strlen(desc));
+            note->desc_open = false;
 
             proj->num_notes++;
             if(proj->num_notes >= PROJECT_MAX_NOTES) {
+                //asm("int3");
                 break;
             }
         }
-        
+    
+        // Sort notes by their severity.
+        if(proj->num_notes > 0) {
+            qsort(proj->notes, proj->num_notes, sizeof *proj->notes, cmp_note_severity);
+        }
     }
         
     json_object_put(objects);
     munmap(file, file_size);
+
+
+
+
 }
 
 

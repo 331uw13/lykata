@@ -2,11 +2,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
-//#include <errno.h>
-//#include <stdbool.h>
+#include <stdlib.h>
 
 #include <ncurses.h>
-//#include <json-c/json.h>
 
 #include "lyk.h"
 #include "tui.h"
@@ -25,6 +23,10 @@ char NOTE_SEVERITY_BUFFER[8] = { 0 };
 #define PRINT_JSON(objects)\
     printf("%s\n", json_object_to_json_string_ext(objects, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY))
 
+inline void create_color_pair(int pair, int r, int g, int b) {
+    init_color(pair, r, g, b);
+    init_pair(pair, pair, -1); 
+}
 
 void init_curses() {
     initscr();
@@ -45,11 +47,15 @@ void init_curses() {
     init_pair(COLOR_WHITE,   COLOR_WHITE, -1);
     init_pair(COLOR_CURSOR,  COLOR_BLACK, COLOR_CYAN);
 
-    init_color(COLOR_DARK, 400, 400, 400);
-    init_pair(COLOR_DARK, COLOR_DARK, -1);
-    
-    init_color(COLOR_VERY_DARK, 200, 200, 200);
-    init_pair(COLOR_VERY_DARK, COLOR_VERY_DARK, -1);
+    create_color_pair(COLOR_DARK, 400, 400, 400);
+    create_color_pair(COLOR_VERY_DARK, 200, 200, 200);
+
+    create_color_pair(COLOR_INDICATOR_VERY_HIGH, 1000, 100, 400);  // >= 90
+    create_color_pair(COLOR_INDICATOR_HIGH, 1000, 300, 100);       // >= 70
+    create_color_pair(COLOR_INDICATOR_MEDIUM, 1000, 500, 100);     // >= 50
+    create_color_pair(COLOR_INDICATOR_LOW_MEDIUM, 700, 800, 100);  // >= 30
+    create_color_pair(COLOR_INDICATOR_LOW, 500, 1000, 100);        // >= 20
+    create_color_pair(COLOR_INDICATOR_VERY_LOW, 500, 500, 500);    // < 20
 }
 
 void handle_delete_selected(struct lyk_t* lyk);
@@ -114,8 +120,8 @@ struct project_t* get_selected_project(struct lyk_t* lyk) {
     // FIXME: This is horrible...
     //        Add some kind of tracking system for this.
 
-    int proj_index = lyk->ncui.cursor_y - 2;
-    if((proj_index < 0) || (proj_index >= lyk->num_projects)) {
+    uint32_t proj_index = lyk->ncui.cursor_y - 2;
+    if(proj_index >= lyk->num_projects) {
         goto out;
     }
 
@@ -162,16 +168,18 @@ int draw_view__projects(struct lyk_t* lyk) {
     if(ncui_button(&lyk->ncui,
                 (struct ncui_elem_mappos_t){ 0, 1 },
                 (struct ncui_elem_drawpos_t){ 2, 4 },
-                "[Add]", " <Enter>", COLOR_PAIR(COLOR_DARK) | A_BLINK)) {
-     
-        create_new_project(lyk, PROJECT_NAME_BUFFER);
-        memset(PROJECT_NAME_BUFFER, 0, sizeof(PROJECT_NAME_BUFFER));
+                "`-> [Add]", " <Enter>", COLOR_PAIR(COLOR_DARK) | A_BLINK)) {
+
+        if(strlen(PROJECT_NAME_BUFFER) > 0) {
+            create_new_project(lyk, PROJECT_NAME_BUFFER);
+            memset(PROJECT_NAME_BUFFER, 0, sizeof(PROJECT_NAME_BUFFER));
+        }
     }
 
     ncui_inputbox(&lyk->ncui, 
             (struct ncui_elem_mappos_t){ 0, 0 },
             (struct ncui_elem_drawpos_t){ 2, 3 },
-            "Project name: ",
+            ",- Project name: ",
             PROJECT_NAME_BUFFER, sizeof(PROJECT_NAME_BUFFER));
 
     for(size_t i = 0; i < lyk->num_projects; i++) {
@@ -183,7 +191,7 @@ int draw_view__projects(struct lyk_t* lyk) {
 
             lyk->curr_project = proj;
             lyk->view = VIEW_PROJECT_NOTES;
-
+            lyk->ncui.cursor_y = 0;
             return SKIP_NEXT_INPUT;
         }
     }
@@ -194,6 +202,129 @@ int draw_view__projects(struct lyk_t* lyk) {
 
 int draw_view__project_notes(struct lyk_t* lyk) {
 
+
+    if(!lyk->curr_project) {
+        mvprintw(10, 10, "[ ERROR: No project pointer was set ]");
+        goto out;
+    }
+
+    mvprintw(3, 30, "%s  -  %li notes", lyk->curr_project->name, lyk->curr_project->num_notes);
+
+    ncui_new_update_begin(&lyk->ncui);
+    ncui_set_cursor_max_y(&lyk->ncui, 4 + lyk->curr_project->num_notes);
+
+
+    if(ncui_button(&lyk->ncui,
+                (struct ncui_elem_mappos_t){ 0, 0 },
+                (struct ncui_elem_drawpos_t){ 2, 3 },
+                "[Back]", " <Enter>", COLOR_PAIR(COLOR_DARK) | A_BLINK)) {
+        lyk->view = VIEW_PROJECTS;
+        lyk->ncui.cursor_y = 0;
+        return SKIP_NEXT_INPUT;
+    }
+
+    ncui_inputbox(&lyk->ncui, 
+            (struct ncui_elem_mappos_t){ 0, 1 },
+            (struct ncui_elem_drawpos_t){ 4, 5 },
+            ",- Note title: ",
+            NOTE_TITLE_BUFFER, sizeof(NOTE_TITLE_BUFFER));
+
+    ncui_inputbox(&lyk->ncui,
+            (struct ncui_elem_mappos_t){ 0, 2 },
+            (struct ncui_elem_drawpos_t){ 4, 6 },
+            "|- Note desc: ",
+            NOTE_DESC_BUFFER, sizeof(NOTE_DESC_BUFFER));
+
+    ncui_inputbox(&lyk->ncui,
+            (struct ncui_elem_mappos_t){ 0, 3 },
+            (struct ncui_elem_drawpos_t){ 4, 7 },
+            "|- Note severity: ",
+            NOTE_SEVERITY_BUFFER, sizeof(NOTE_SEVERITY_BUFFER));
+
+    if(ncui_button(&lyk->ncui,
+            (struct ncui_elem_mappos_t){ 0, 4 },
+            (struct ncui_elem_drawpos_t){ 4, 8 },
+            "`-> [Add]", " <Enter>", COLOR_PAIR(COLOR_DARK) | A_BLINK)) {
+        const size_t note_title_len = strlen(NOTE_TITLE_BUFFER);
+        const size_t note_desc_len = strlen(NOTE_DESC_BUFFER);
+        const size_t note_severity_len = strlen(NOTE_SEVERITY_BUFFER);
+
+        if(note_title_len && note_desc_len && note_severity_len) {
+    
+            int note_severity = atoi(NOTE_SEVERITY_BUFFER);
+            note_severity = (note_severity < 0) ? 0 : (note_severity > 100) ? 100 : note_severity;
+            
+            create_new_project_note(lyk,
+                    lyk->curr_project->name,
+                    NOTE_TITLE_BUFFER,
+                    NOTE_DESC_BUFFER,
+                    note_severity);
+
+            memset(NOTE_TITLE_BUFFER, 0, note_title_len);
+            memset(NOTE_DESC_BUFFER, 0, note_desc_len);
+            memset(NOTE_SEVERITY_BUFFER, 0, note_severity_len);
+        }
+    }
+
+    int note_draw_y = 10;
+
+    for(size_t i = 0; i < lyk->curr_project->num_notes; i++) {
+        struct note_t* note = &lyk->curr_project->notes[i];
+
+        //int note_draw_y = 10 + i;
+        int indicator_attr = 0;
+
+        if(note->severity >= 90) {
+            indicator_attr = COLOR_PAIR(COLOR_INDICATOR_VERY_HIGH);
+        }
+        else
+        if(note->severity >= 70) {
+            indicator_attr = COLOR_PAIR(COLOR_INDICATOR_HIGH);
+        }
+        else
+        if(note->severity >= 50) {
+            indicator_attr = COLOR_PAIR(COLOR_INDICATOR_MEDIUM);
+        }
+        else
+        if(note->severity >= 30) {
+            indicator_attr = COLOR_PAIR(COLOR_INDICATOR_LOW_MEDIUM);
+        }
+        else
+        if(note->severity >= 20) {
+            indicator_attr = COLOR_PAIR(COLOR_INDICATOR_LOW);
+        }
+        else {
+            indicator_attr = COLOR_PAIR(COLOR_INDICATOR_VERY_LOW);
+        }
+
+        indicator_attr |= A_BOLD;
+
+        attron(indicator_attr);
+        mvprintw(note_draw_y, 3, "(%i)", note->severity);
+        attroff(indicator_attr);
+
+
+        if(ncui_button(&lyk->ncui,
+                (struct ncui_elem_mappos_t){ 0, 5+i },
+                (struct ncui_elem_drawpos_t){ 14, note_draw_y },
+                note->title.bytes, NULL, 0)) {
+            note->desc_open = !note->desc_open;
+        }
+        
+        mvaddch(note_draw_y, 12, note->desc_open ? 'v' : '>');
+    
+        note_draw_y++;
+
+        if(note->desc_open) {
+        
+            mvaddstr(note_draw_y, 16, note->desc.bytes);
+            note_draw_y++;
+
+        }
+    }
+
+
+out:
     return LISTEN_NEXT_INPUT;
 }
 
