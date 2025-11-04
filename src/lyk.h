@@ -60,6 +60,7 @@ void read_project_notes(struct lyk_t* lyk);
 
 void create_new_project(struct lyk_t* lyk, const char* project_name);
 void delete_project(struct lyk_t* lyk, const char* project_name);
+void delete_project_note(struct lyk_t* lyk, const char* project_name, const char* note_title);
 
 void create_new_project_note
 (

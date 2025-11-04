@@ -20,8 +20,6 @@ char NOTE_SEVERITY_BUFFER[8] = { 0 };
 
 
 
-#define PRINT_JSON(objects)\
-    printf("%s\n", json_object_to_json_string_ext(objects, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY))
 
 inline void create_color_pair(int pair, int r, int g, int b) {
     init_color(pair, r, g, b);
@@ -58,7 +56,7 @@ void init_curses() {
     create_color_pair(COLOR_INDICATOR_VERY_LOW, 500, 500, 500);    // < 20
 }
 
-void handle_delete_selected(struct lyk_t* lyk);
+//void handle_delete_selected(struct lyk_t* lyk);
 
 void input_handler(struct lyk_t* lyk) {
 
@@ -89,6 +87,7 @@ void input_handler(struct lyk_t* lyk) {
             ncui_event_key_press(&lyk->ncui, input);
             break;
 
+            /*
         case 'x':
             {
                 struct ncui_element_t* cursor_elem
@@ -102,6 +101,7 @@ void input_handler(struct lyk_t* lyk) {
                 }
             }
             break;
+            */
 
         case 0x0A: // Enter
             ncui_event_key_press(&lyk->ncui, input);
@@ -131,7 +131,7 @@ out:
     return proj;
 }
 
-
+/*
 void handle_delete_selected(struct lyk_t* lyk) {
     if(lyk->view == VIEW_PROJECTS) {
         struct project_t* proj = get_selected_project(lyk);
@@ -155,7 +155,7 @@ void handle_delete_selected(struct lyk_t* lyk) {
     
     }
 }
-
+*/
 
 #define LISTEN_NEXT_INPUT 1
 #define SKIP_NEXT_INPUT 2
@@ -187,12 +187,32 @@ int draw_view__projects(struct lyk_t* lyk) {
         if(ncui_button(&lyk->ncui,
                     (struct ncui_elem_mappos_t){ 0, 2 + i },
                     (struct ncui_elem_drawpos_t){ 4, 6 + i },
-                    proj->name, " -  Enter: 'view', x: 'delete'", COLOR_PAIR(COLOR_DARK) | A_DIM)) {
+                    proj->name, NULL, 0)) {
 
             lyk->curr_project = proj;
             lyk->view = VIEW_PROJECT_NOTES;
             lyk->ncui.cursor_y = 0;
             return SKIP_NEXT_INPUT;
+        }
+
+        if(lyk->ncui.cursor_y-2 == (int64_t)i) {
+            if(ncui_button(&lyk->ncui,
+                        (struct ncui_elem_mappos_t){ 1, 2 + i },
+                        (struct ncui_elem_drawpos_t){ 5 + strlen(proj->name), 6 + i },
+                        "[x]", NULL, 0)) {
+
+                int result = confirm_user_action(lyk, 0, 
+                        "Are you sure you want to delete \"%s\" notes?\n"
+                        "This action cannot be undone", proj->name);
+    
+                if(result == USER_ACTION_CONFIRMED) {
+                    delete_project(lyk, proj->name);
+                    if(lyk->ncui.cursor_y >= lyk->ncui.cursor_max_y) {
+                        lyk->ncui.cursor_y = lyk->ncui.cursor_max_y - 1;
+                    }
+                }
+                return SKIP_NEXT_INPUT;
+            }
         }
     }
 
@@ -304,13 +324,38 @@ int draw_view__project_notes(struct lyk_t* lyk) {
         attroff(indicator_attr);
 
 
+        // Open/Close description button.
         if(ncui_button(&lyk->ncui,
                 (struct ncui_elem_mappos_t){ 0, 5+i },
                 (struct ncui_elem_drawpos_t){ 14, note_draw_y },
                 note->title.bytes, NULL, 0)) {
             note->desc_open = !note->desc_open;
-        }
+        } 
+
+
+        if(lyk->ncui.cursor_y-5 == (int64_t)i) {
+            // Delete note button.
+            if(ncui_button(&lyk->ncui,
+                    (struct ncui_elem_mappos_t){ 1, 5+i },
+                    (struct ncui_elem_drawpos_t){ 14 + note->title.size + 1, note_draw_y },
+                    "[x]", NULL, 0)) {
         
+                int result = confirm_user_action(lyk, COLOR_RED, 
+                        "Are you sure you want to delete\n"
+                        "\"%s\" ?\n"
+                        "This action cannot be undone!", note->title.bytes);
+                
+                if(result == USER_ACTION_CONFIRMED) {
+                    delete_project_note(lyk, lyk->curr_project->name, note->title.bytes);
+                    if(lyk->ncui.cursor_y >= lyk->ncui.cursor_max_y) {
+                        lyk->ncui.cursor_y = lyk->ncui.cursor_max_y - 1;
+                    }
+                }
+                 
+                return SKIP_NEXT_INPUT;
+            }
+        }
+               
         mvaddch(note_draw_y, 12, note->desc_open ? 'v' : '>');
     
         note_draw_y++;
@@ -376,7 +421,7 @@ int main() {
         .inputbox_cursor_attr = COLOR_PAIR(COLOR_GREEN) | A_BLINK
     };
 
-    
+
     read_project_notes(lyk);
     
     init_curses();

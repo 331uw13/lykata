@@ -21,7 +21,8 @@
 #define LIST_FILENAME "project-notes.json"
 
 
-
+#define PRINT_JSON(objects)\
+    printf("%s\n", json_object_to_json_string_ext(objects, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY))
 
 struct lyk_t* lyk_init() {
 
@@ -117,6 +118,21 @@ static int cmp_note_severity(const void* p1, const void* p2) {
     return (n1->severity < n2->severity);
 }
 
+static void save_json_to_listpath(struct lyk_t* lyk, struct json_object* objects) {    
+    int fd = open(lyk->list_path.bytes, O_WRONLY | O_TRUNC);
+    if(fd > 0) {
+        const char* updated_json = json_object_to_json_string_ext(objects, 
+                JSON_C_TO_STRING_PLAIN | 
+                JSON_C_TO_STRING_PRETTY | 
+                JSON_C_TO_STRING_SPACED);
+
+        write(fd, updated_json, strlen(updated_json));
+        close(fd);
+    }
+
+}
+
+
 void read_project_notes(struct lyk_t* lyk) {
     char* file = NULL;
     size_t file_size = 0;
@@ -174,9 +190,6 @@ void read_project_notes(struct lyk_t* lyk) {
     json_object_put(objects);
     munmap(file, file_size);
 
-
-
-
 }
 
 
@@ -195,21 +208,10 @@ void create_new_project(struct lyk_t* lyk, const char* project_name) {
     
     struct json_object* objects = json_tokener_parse(file);
     struct json_object* notes_arr = json_object_new_array();
-
     json_object_object_add(objects, project_name, notes_arr);
 
-    int fd = open(lyk->list_path.bytes, O_WRONLY | O_TRUNC);
-    if(fd > 0) {
-        const char* updated_json = json_object_to_json_string_ext(objects, 
-                JSON_C_TO_STRING_PLAIN | 
-                JSON_C_TO_STRING_PRETTY | 
-                JSON_C_TO_STRING_SPACED);
-
-        write(fd, updated_json, strlen(updated_json));
-        close(fd);
-    }
-    // TODO: Report errors.
-
+    save_json_to_listpath(lyk, objects);
+    
     json_object_put(objects);
     munmap(file, file_size);
 
@@ -249,25 +251,54 @@ void create_new_project_note
     json_object_object_add(note_obj, "severity", json_object_new_int(note_severity));
     json_object_object_add(note_obj, "title", json_object_new_string(note_title));
     json_object_object_add(note_obj, "desc", json_object_new_string(note_desc));
-
     json_object_array_add(notes_arr, note_obj);
+
+    save_json_to_listpath(lyk, objects);
     
-    int fd = open(lyk->list_path.bytes, O_WRONLY | O_TRUNC);
-    if(fd > 0) {
-        const char* updated_json = json_object_to_json_string_ext(objects, 
-                JSON_C_TO_STRING_PLAIN | 
-                JSON_C_TO_STRING_PRETTY | 
-                JSON_C_TO_STRING_SPACED);
-
-        write(fd, updated_json, strlen(updated_json));
-        close(fd);
-    }
-    // TODO: Report errors.
-
 out:
     json_object_put(objects);
     munmap(file, file_size);
 
+    read_project_notes(lyk);
+}
+
+void delete_project_note(struct lyk_t* lyk, const char* project_name, const char* note_title) {
+    char* file = NULL;
+    size_t file_size = 0;
+
+    if(!map_file(lyk->list_path.bytes, &file, &file_size)) {
+        return;
+    }
+
+    if(file_size == 0) {
+        return;
+    }
+    
+    struct json_object* objects = json_tokener_parse(file);
+    struct json_object* project_notes = json_object_object_get(objects, project_name);
+    
+
+    size_t arr_len = json_object_array_length(project_notes);
+    for(size_t i = 0; i < arr_len; i++) {
+        
+        struct json_object* note = json_object_array_get_idx(project_notes, i);
+
+        struct json_object* title_obj = json_object_object_get(note, "title");    
+        const char* title = json_object_get_string(title_obj);
+
+        if(strcmp(title, note_title) == 0) {
+            json_object_array_del_idx(project_notes, i, 1);
+            break;
+        }
+    }
+
+
+    save_json_to_listpath(lyk, objects);
+
+    json_object_put(objects);
+    munmap(file, file_size);
+
+    // Update files.
     read_project_notes(lyk);
 }
 
@@ -286,17 +317,7 @@ void delete_project(struct lyk_t* lyk, const char* project_name) {
     struct json_object* objects = json_tokener_parse(file);
     json_object_object_del(objects, project_name);
 
-    int fd = open(lyk->list_path.bytes, O_WRONLY | O_TRUNC);
-    if(fd > 0) {
-        const char* updated_json = json_object_to_json_string_ext(objects, 
-                JSON_C_TO_STRING_PLAIN | 
-                JSON_C_TO_STRING_PRETTY | 
-                JSON_C_TO_STRING_SPACED);
-
-        write(fd, updated_json, strlen(updated_json));
-        close(fd);
-    }
-    // TODO: Report errors.
+    save_json_to_listpath(lyk, objects);
 
     json_object_put(objects);
     munmap(file, file_size);
@@ -304,33 +325,4 @@ void delete_project(struct lyk_t* lyk, const char* project_name) {
     // Update files.
     read_project_notes(lyk);
 }
-
-/*
-void delete_selected_project(struct lyk_t* lyk) {
-    // There are 2 elements before project name list:
-    // INPUT__PROJECT_NAME and BUTTON__ADD_PROJECT.
-    if(lyk->view_cursor < 2) {
-        return;
-    }
-
-    int64_t proj_index = lyk->view_cursor - 2;
-    if(proj_index >= (int64_t)lyk->num_projects) {
-        return;
-    }
-
-    struct project_t* project = &lyk->projects[proj_index];
-
-    if(confirm_user_action(lyk, COLOR_RED, 
-                "Delete \"%s\" notes?\n"
-                "This action cannot be undone!",
-                project->name) == USER_ACTION_DECLINED) {
-        return;
-    }
-
-    delete_project(lyk, project->name);
-    if((int64_t)lyk->view_cursor-2 >= (int64_t)lyk->num_projects) {
-        lyk->view_cursor = lyk->num_projects + 2 - 1;
-    }
-}
-*/
 

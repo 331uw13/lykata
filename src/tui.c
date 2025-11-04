@@ -20,7 +20,7 @@ int confirm_user_action(struct lyk_t* lyk, int message_color_pair, const char* m
 
     // Separate message by new line character
     // because mvaddstr resets the column. (Im not sure if ncurses has function who doesnt do that)
-    char message_lines[8][64] = { 0 };
+    char message_lines[8][96] = { 0 };
     uint32_t num_message_lines = 0;
     uint32_t curr_message_idx = 0;
 
@@ -36,7 +36,8 @@ int confirm_user_action(struct lyk_t* lyk, int message_color_pair, const char* m
                 longest_message_line = curr_message_idx;
             }
 
-            if(num_message_lines >= (sizeof(message_lines) / sizeof(*message_lines))) {
+            if(num_message_lines >= 
+                    (sizeof(message_lines) / sizeof(*message_lines))) {
                 break;
             }
 
@@ -48,7 +49,12 @@ int confirm_user_action(struct lyk_t* lyk, int message_color_pair, const char* m
         
         curr_message_idx++;
         if(curr_message_idx >= sizeof(*message_lines)) {
-            break; // TODO: Report this error!
+            num_message_lines++;
+
+            if(num_message_lines >= 
+                    (sizeof(message_lines) / sizeof(*message_lines))) {
+                break;
+            }
         }
     }
     
